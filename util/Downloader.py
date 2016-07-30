@@ -2,6 +2,7 @@
 Created on 02/02/2011
 
 @author: suomynonA
+@contributor: toboe
 '''
 
 from __future__ import print_function
@@ -51,7 +52,7 @@ class Downloader (object):
                                     ('commit' , 'Login')])
         
         #Login
-        urllib2.urlopen('http://danbooru.donmai.us/user/authenticate', params)
+        urllib2.urlopen('http://e621.net/user/authenticate', params)
         
         #Check if login was done right    
         loginOK = self.checkLogin()
@@ -72,7 +73,7 @@ class Downloader (object):
         import LoginHandler
                 
         #Open the user page 
-        page = urllib2.urlopen("http://danbooru.donmai.us/user/home")
+        page = urllib2.urlopen("http://e621.net/user/home")
         data = page.read()
         
         #Parse the page and check if the login was correct
@@ -85,11 +86,24 @@ class Downloader (object):
         Looks for the tags in the database and stores the resulting posts in the download list 
         """ 
         
-        postLimit = 24     #How many posts are displayed per page    
+        postLimit = 24.0     #How many posts are displayed per page    
         
         #Search for the pool
-        poolURL = 'http://danbooru.donmai.us/pool/show.xml?id=%s' % (self.poolID)
-        results = urllib2.urlopen(poolURL)
+        poolURL = 'http://e621.net/pool/show.xml?id=%s' % (self.poolID)
+        
+        connectionSuccess = False
+        attempt = 1
+        while (attempt <= int(self.options.c_retries)):
+            try:
+                results = urllib2.urlopen(poolURL)
+                connectionSuccess = True
+                break
+            except Exception as e:
+                print('could not connect to site: ', e, '.   Attempt ', attempt, ' of ', self.options.c_retries)
+                attempt += 1
+        
+        if connectionSuccess == False:
+            return
     
         #Parse the returned XML
         dom = xml.dom.minidom.parse(results)
@@ -98,30 +112,48 @@ class Downloader (object):
         for i in info:
             ats = dict(i.attributes.items())
         
-        postCount = int(ats.get('post_count'))
+        postCount = float(ats.get('post_count'))
         self.poolName = ats.get('name')
         
         #How many pages does the pool have
         totalPages = ceil(postCount / postLimit) 
+        print ("postCount: " + str(postCount) + " , totalPages: " + str(totalPages))
         
         print('%d posts found in pool "%s"' % (postCount, self.poolName), end = '.\n\n')
         
-        page = 1            #Position in the results
+        page = 1.0            #Position in the results
         
         #Get the posts from each page and move to the next one
         while True:
             
             #Get the posts in this page and parse them
             url = poolURL + '&page=%d' % (page)
-            results = urllib2.urlopen(url)
+            
+            print("\n" + url);
+            results = 0
+            connectionSuccess = False
+            attempt = 1
+            while (attempt <= int(self.options.c_retries)):
+                try:
+                    results = urllib2.urlopen(url)
+                    connectionSuccess = True
+                    break
+                except Exception as e:
+                    print('could not connect to site: ', e, '.   Attempt ', attempt, ' of ', self.options.c_retries)
+                    attempt += 1
+            
+            if connectionSuccess == False:
+                print('could not connect to site.  Aborting.')
+                return
+            
             dom = xml.dom.minidom.parse(results)
             self.posts = dom.getElementsByTagName('post')
             
             #Download the posts in this page and move to the next
             self.downloadPosts()
-            page += 1
+            page += 1.0
             
-            if page < totalPages:
+            if page > totalPages:
                 break
         
         print('\nDownload finished.')
@@ -133,17 +165,19 @@ class Downloader (object):
         """
         
         destinationFolder = self.options.folder
+        previousDir = os.getcwd();
         
         #Create the folder in which files will be downloaded if id does not exists and move to it 
         if not os.path.exists(destinationFolder):
             os.mkdir(destinationFolder)
         
         os.chdir(destinationFolder)
+        self.poolName = self.getWindowsFriendlyFilename(self.poolName)
+        poolFolder = os.path.join(os.getcwd(),self.poolName)
         
-        destinationFolder = os.path.join(destinationFolder,self.poolName)
-        if not os.path.exists(destinationFolder):
-            os.mkdir(destinationFolder)
-        os.chdir(destinationFolder)
+        if not os.path.exists(poolFolder):
+            os.mkdir(poolFolder)
+        os.chdir(poolFolder)
         
         #Download each file
         for post in self.posts:
@@ -154,61 +188,70 @@ class Downloader (object):
                 self.getFile(post)       
                 
                 if self.options.md5 and not self.md5OK:
-                    print('File is corrupt', end = '')
+                    print('File is corrupt. ', end = '')
                     while n < self.options.c_retries:
-                        print('downloading again.', end = '')
-                        self.getFile(post)
                         n+=1
+                        print('downloading again.  attempt # ', n, ' of ', self.options.c_retries, '. \n', end = '')
+                        self.getFile(post, True)
                     print('.')
             
             except KeyboardInterrupt:
                 raise
+        
+        os.chdir(previousDir)
     
-    
-    def getFile(self, post):
+    def getFile(self, post, retry = False):
         """Gets the file from the post"""
         
         #Parse the API XML 
-        ats = dict(post.attributes.items())
+        urlNodes = post.getElementsByTagName('file_url') #Get the url to download the file from
+        urlNode = urlNodes.item(0) 
+        url = urlNode.firstChild.nodeValue
+        print("url: " + str(url))
         
-        #Get the url to download the file from
-        url = ats.get('file_url')
+        md5 = post.getElementsByTagName('md5').item(0).firstChild.nodeValue
+        rating = post.getElementsByTagName('rating').item(0).firstChild.nodeValue
+        id = post.getElementsByTagName('id').item(0).firstChild.nodeValue
+        tags = post.getElementsByTagName('tags').item(0).firstChild.nodeValue
+        width = post.getElementsByTagName('width').item(0).firstChild.nodeValue
+        height = post.getElementsByTagName('height').item(0).firstChild.nodeValue
+        file_size = int(post.getElementsByTagName('file_size').item(0).firstChild.nodeValue)
+        
         
         #Create the filename based on the settings template and open the file for writing
-        md5 = ats.get('md5')
-        rat = ats.get('rating')
-        if rat == 's':
-            rat = 'safe'
-        elif rat == 'q':
-            rat = 'questionable'
+        if rating == 's':
+            rating = 'safe'
+        elif rating == 'q':
+            rating = 'questionable'
         else:
-            rat = 'explicit'
+            rating = 'explicit'
         
-        name = self.temp.substitute(pos = self.pos, id = ats.get('id'), md5 = md5, 
-                                    tags = ats.get('tags'), rating = rat,  
-                                    w = ats.get('width'), h = ats.get('height'))
+        name = self.temp.substitute(pos = self.pos, id = id, md5 = md5, 
+                                    tags = tags, rating = rating,  
+                                    w = width, h = height)
         
         extension = os.path.splitext(url)[1]
         fullName = name + extension
         
-        size = int(ats.get('file_size'))
-        
-        if size > 1024:
-            size = size/1024
-            size = '%dKB' %size
+        if file_size > 1024:
+            file_size = file_size/1024
+            file_size = '%dKB' %file_size
         
         else:
-            size = '%d B' %size
+            file_size = '%d B' %file_size
             
-        print("Downloading " + md5 + extension + ' (' + size +')...', end ='')
+        print("Downloading " + url + ' (' + file_size +')... \n', end ='')
                  
-        if os.path.exists(fullName):
-            print ('File already exists.')
-            self.pos += 1
-            return 
+        if retry == False:
+            if os.path.exists(fullName):
+                print ('File already exists.')
+                self.pos += 1
+                return 
         
-        outFile = open(fullName, 'wb')
-                    
+        print("Saving to " + os.getcwd() + "\\" + fullName)
+        
+        outFile = open(fullName, 'wb')        
+        
         try:
             file = urllib2.urlopen(url)
             dlFinished = False
@@ -229,12 +272,13 @@ class Downloader (object):
         
         #If checking is enabled in the settings get the file MD5 sum and compare it with the API's
         if self.options.md5:
-            realMD5 = ats.get('md5')
+            realMD5 = md5
             self.md5OK = self.checkMD5(fullName, realMD5)
             if not self.md5OK:
                 outFile.close()
                 os.remove(fullName)
-                self.downloaded -=1
+                self.downloaded -= 1
+                self.pos -= 1
         
         self.pos += 1
         print('Finished.')
@@ -250,3 +294,19 @@ class Downloader (object):
             return False
         
         return True
+    
+    
+    def getWindowsFriendlyFilename(self, filename):
+        print("old filename: ", filename)
+        new_filename = filename
+        new_filename = new_filename.replace('\\', "")
+        new_filename = new_filename.replace('/', "")
+        new_filename = new_filename.replace(':', "")
+        new_filename = new_filename.replace('*', "")
+        new_filename = new_filename.replace('?', "")
+        new_filename = new_filename.replace('"', "")
+        new_filename = new_filename.replace('<', "")
+        new_filename = new_filename.replace('>', "")
+        new_filename = new_filename.replace('|', "")
+        print("new filename: ", new_filename)
+        return new_filename

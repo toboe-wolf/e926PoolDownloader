@@ -1,13 +1,14 @@
 #!/usr/bin/python
 
 """
-== DanbooruPoolDL ==
+== DanbooruPoolDL (e621 version) ==
     
     Created on 02/02/2011
     @author: suomynonA
+    @contributor: toboe
 
     A simple, customizable tool for downloading files from pools
-    in Danbooru (http://danbooru.donmai.us)
+    from sites exactly like e926.net
 
 == System Requirements ==
     Python 2.6(http://python.org)

@@ -1,7 +1,33 @@
+== PURPOSE ==
+
+Use the e621 Pool Downloader to download pools of images from sites exactly like e926.net
+For the latest version, visit https://github.com/toboe-wolf/e926PoolDownloader/zipball/master
+
+== REQUIREMENTS ==
+
+Requires Python 2.7+
+
+
+
 == USAGE ==
 
-  pool.py POOL_NUMBER [-h] [--version] [-s] [-u USER] [-p PASS] [-f FOLDER] [-n TEMPLATE] [-m] [-c RETRIES_ON_CORRUPT_FILE] [-t TIMEOUT]
+For Linux / Mac users, see "ADVANCED USAGE".
 
+For Windows users:
+	You can use 'e621.bat'.  Follow the following directions:
+		edit e621.bat (right click, edit)
+		put the pool id's in the list like so: "POOL_ID_LIST=(1188 803 1819 1274)"
+		save e621.bat
+		run e621.bat (double click)
+		images will appear in a folder called "output_pools"
+
+
+
+
+
+== ADVANCED USAGE ==
+
+  pool.py POOL_NUMBER [-h] [--version] [-s] [-u USER] [-p PASS] [-f FOLDER] [-n TEMPLATE] [-m] [-c RETRIES_ON_CORRUPT_FILE] [-t TIMEOUT]
   
 == OPTIONS EXPLAINED ==
 
@@ -62,8 +88,7 @@ otherwhise Python will think that the following characters are party of they key
 	
 == QUESTIONS, BUG REPORTS, FEATURE REQUESTS, ETC. ==
 
-Please write them in the appropiate section of the project's sourceforge page (https://sourceforge.net/projects/danboorupooldl/)
-or mail them to U.0x202E@gmail.com (please include [question]/[bug]/[request]/[death threat] on the title)
+Please write them in the issues section of the project's git page ( https://github.com/toboe-wolf/e926PoolDownloader/issues ).
 
 
---suomynonA !AnonzWfB9s
+--toboe
