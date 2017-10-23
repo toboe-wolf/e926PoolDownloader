@@ -304,7 +304,6 @@ class Downloader (object):
         value = unicodedata.normalize('NFKD', value)
         value = value.encode('ascii', 'ignore')
         value = unicode(value.strip())
-        value = unicode(value.strip())
         value = unicode(value.replace(' ', '_'))
         value = unicode(re.sub(r'(?u)[^-\w.]', '', value))
         return value
