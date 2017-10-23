@@ -8,6 +8,7 @@ Created on 02/02/2011
 from __future__ import print_function
 import os
 import re
+import base64
 import socket
 import urllib, urllib2 
 import xml.dom.minidom
@@ -115,7 +116,11 @@ class Downloader (object):
             ats = dict(i.attributes.items())
         
         postCount = float(ats.get('post_count'))
-        self.poolName = self.get_valid_filename(ats.get('name'))
+        
+        name = ats.get('name')
+        safe_name = self.get_valid_filename(name)
+        name_hash = self.get_hash_string(name) #sometimes the safe name is empty, so add this
+        self.poolName = unicode("_".join([safe_name, name_hash]))
         
         #How many pages does the pool have
         totalPages = math.ceil(postCount / postLimit) 
@@ -216,7 +221,6 @@ class Downloader (object):
         urlNode = urlNodes.item(0) 
         url = urlNode.firstChild.nodeValue
         
-        name = self.poolName
         md5 = post.getElementsByTagName('md5').item(0).firstChild.nodeValue
         rating = post.getElementsByTagName('rating').item(0).firstChild.nodeValue
         id = post.getElementsByTagName('id').item(0).firstChild.nodeValue
@@ -236,11 +240,10 @@ class Downloader (object):
         
         name = self.temp.substitute(pos = self.post_index, id = id, md5 = md5, 
                                     tags = tags, rating = rating,  
-                                    w = width, h = height, name = name)
-        name = self.get_valid_filename(name)
+                                    w = width, h = height, name = self.poolName)
         
-        extension = self.get_valid_filename(os.path.splitext(url)[1])
-        fullName = u''.join([name, extension]).encode('utf-8').strip()
+        extension = os.path.splitext(url)[1]
+        fullName = self.get_valid_filename(u''.join([name, extension]))
         
         if file_size > 1024:
             file_size = file_size/1024
@@ -296,13 +299,20 @@ class Downloader (object):
         return True
     
     
-    def get_valid_filename(self, value):
+    def get_valid_filename(self, s):
+        value = s
         value = unicodedata.normalize('NFKD', value)
         value = value.encode('ascii', 'ignore')
         value = unicode(value.strip())
         value = unicode(value.strip())
         value = unicode(value.replace(' ', '_'))
-        # value = unicode(re.sub('[^\w\s-]', '', value))
-        # value = unicode(re.sub('[-\s]+', '-', value))
         value = unicode(re.sub(r'(?u)[^-\w.]', '', value))
         return value
+    
+    def get_hash_string(self, s):
+        s = s.encode('utf-8')
+        hash = base64.urlsafe_b64encode(s)
+        hash = hash[:10] #truncate
+        hash = unicode(hash)
+        return hash
+        
