@@ -15,6 +15,7 @@ import string
 import hashlib
 import math
 import traceback
+import unicodedata
 
 
 class Downloader (object):
@@ -236,9 +237,10 @@ class Downloader (object):
         name = self.temp.substitute(pos = self.post_index, id = id, md5 = md5, 
                                     tags = tags, rating = rating,  
                                     w = width, h = height, name = name)
+        name = self.get_valid_filename(name)
         
-        extension = os.path.splitext(url)[1]
-        fullName = name + extension
+        extension = self.get_valid_filename(os.path.splitext(url)[1])
+        fullName = u''.join([name, extension]).encode('utf-8').strip()
         
         if file_size > 1024:
             file_size = file_size/1024
@@ -294,8 +296,13 @@ class Downloader (object):
         return True
     
     
-    def get_valid_filename(self, s):
-        result = str(s).strip().replace(' ', '_')
-        result = re.sub(r'(?u)[^-\w.]', '', result)
-        result = result.decode('utf-8')
-        return result
+    def get_valid_filename(self, value):
+        value = unicodedata.normalize('NFKD', value)
+        value = value.encode('ascii', 'ignore')
+        value = unicode(value.strip())
+        value = unicode(value.strip())
+        value = unicode(value.replace(' ', '_'))
+        # value = unicode(re.sub('[^\w\s-]', '', value))
+        # value = unicode(re.sub('[-\s]+', '-', value))
+        value = unicode(re.sub(r'(?u)[^-\w.]', '', value))
+        return value
