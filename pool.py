@@ -11,9 +11,9 @@
     from sites exactly like e926.net
 
 == System Requirements ==
-    Python 2.6(http://python.org)
+    Python 2.7(http://python.org)
     or 
-    PortablePython 1.1 based on Python 2.6.1 (http://www.portablepython.com/)
+    PortablePython based on Python 2.7 (http://www.portablepython.com/)
     
 == Copyright ==
     This script is released under the GNU General Public License 
@@ -23,6 +23,7 @@ Check the README.txt file for usage information
 """
 
 import os
+import sys
 import optparse
 import shelve
 from util.Downloader import Downloader
@@ -38,11 +39,11 @@ def defaultSettings():
     settings['user'] = ''
     settings['pass'] = ''
     settings['folder'] = r'.'
-    settings['f_temp'] = r'[${pos}]${id}_$md5'
+    settings['f_temp'] = r'${name}_${pos}'
     settings['md5'] = True
-    settings['retry_corrupt'] = False
-    settings['c_retries'] = 2
-    settings['timeout'] = 6
+    settings['retry_corrupt'] = True
+    settings['c_retries'] = 5
+    settings['timeout'] = 15
 
     
 def changeSetings():
@@ -226,11 +227,9 @@ def getOptions():
         options.md5 = settings['md5']
     
     if options.c_retries == None:
-        if options.md5:    
-            options.c_retries = settings['c_retries']
-        else:
-            options.c_retries = 0
-              
+        options.c_retries = settings['c_retries']
+    options.c_retries = int(options.c_retries)
+    
     if options.timeout == None:
         options.timeout = settings['timeout']
         
@@ -268,13 +267,13 @@ if __name__ == '__main__':
     
     settings = shelve.open('settings', writeback = True)
     
+    rc = 1
     try:
-        main()
+        rc = main()
     
     except KeyboardInterrupt:
         print "Stopped."
     
     finally:
         settings.close()
-
-    
+    sys.exit(rc)

@@ -54,7 +54,7 @@ For Windows users:
 	Disables the comparison between the downloaded file and the one stated in the danbooru post.
 
   -c RETRIES, --corrupt_retries=RETRIES
-	Change how many times files whose md5 doesn't match with teh official one are retried before skipping.
+	Change how many times to retry downloading files which fail to download or who's md5 hash doesn't match with the official one.
 
   -t TIMEOUT --timeout=TIMEOUT
 	Changes how many seconds BooruPoolDL should wait for Danbooru to reply before stopping the download.

@@ -7,12 +7,14 @@ Created on 02/02/2011
 
 from __future__ import print_function
 import os
+import re
 import socket
 import urllib, urllib2 
 import xml.dom.minidom
 import string
-from hashlib import md5
-from math import ceil
+import hashlib
+import math
+import traceback
 
 
 class Downloader (object):
@@ -29,8 +31,7 @@ class Downloader (object):
         
         self.poolID = pool
         self.downloaded = 0
-        self.pos = 1
-        self.md5OK = True
+        self.post_index = 1
         self.temp = string.Template(self.options.temp)
         socket.setdefaulttimeout(self.options.timeout)
         
@@ -93,13 +94,13 @@ class Downloader (object):
         
         connectionSuccess = False
         attempt = 1
-        while (attempt <= int(self.options.c_retries)):
+        while (attempt <= self.options.c_retries):
             try:
                 results = urllib2.urlopen(poolURL)
                 connectionSuccess = True
                 break
-            except Exception as e:
-                print('could not connect to site: ', e, '.   Attempt ', attempt, ' of ', self.options.c_retries)
+            except Exception as err:
+                print('could not connect to site: {err}.  Attempt {attempt} of {retries}'.format(err=err, attempt=attempt, retries=self.options.c_retries))
                 attempt += 1
         
         if connectionSuccess == False:
@@ -113,13 +114,16 @@ class Downloader (object):
             ats = dict(i.attributes.items())
         
         postCount = float(ats.get('post_count'))
-        self.poolName = ats.get('name')
+        self.poolName = self.get_valid_filename(ats.get('name'))
         
         #How many pages does the pool have
-        totalPages = ceil(postCount / postLimit) 
+        totalPages = math.ceil(postCount / postLimit) 
         print ("postCount: " + str(postCount) + " , totalPages: " + str(totalPages))
         
-        print('%d posts found in pool "%s"' % (postCount, self.poolName), end = '.\n\n')
+        try:
+            print('{num} posts found in pool "{pool}"'.format(num=postCount, pool=self.poolName))
+        except:
+            pass
         
         page = 1.0            #Position in the results
         
@@ -133,13 +137,13 @@ class Downloader (object):
             results = 0
             connectionSuccess = False
             attempt = 1
-            while (attempt <= int(self.options.c_retries)):
+            while (attempt <= self.options.c_retries):
                 try:
                     results = urllib2.urlopen(url)
                     connectionSuccess = True
                     break
-                except Exception as e:
-                    print('could not connect to site: ', e, '.   Attempt ', attempt, ' of ', self.options.c_retries)
+                except Exception as err:
+                    print('could not connect to site: {err}.  Attempt {attempt} of {retries}'.format(err=err, attempt=attempt, retries=self.options.c_retries))
                     attempt += 1
             
             if connectionSuccess == False:
@@ -172,7 +176,6 @@ class Downloader (object):
             os.mkdir(destinationFolder)
         
         os.chdir(destinationFolder)
-        self.poolName = self.getWindowsFriendlyFilename(self.poolName)
         poolFolder = os.path.join(os.getcwd(),self.poolName)
         
         if not os.path.exists(poolFolder):
@@ -181,34 +184,38 @@ class Downloader (object):
         
         #Download each file
         for post in self.posts:
-            if self.md5OK:
-                n = 0
-            
+            print("")
             try:
-                self.getFile(post)       
-                
-                if self.options.md5 and not self.md5OK:
-                    print('File is corrupt. ', end = '')
-                    while n < self.options.c_retries:
-                        n+=1
-                        print('downloading again.  attempt # ', n, ' of ', self.options.c_retries, '. \n', end = '')
-                        self.getFile(post, True)
-                    print('.')
-            
+                for trial in range(0, self.options.c_retries):
+                    try:
+                        self.getFile(post)
+                        break #it succeeded, so it's ok to skip the trials and go to the next post
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as err:
+                        print("Download and/or save failed")
+                        if(trial + 1 < self.options.c_retries):
+                            print('Re-attempting download.  re-attempt # {t} of {retries}. \n'.format(t=(trial+1), retries=(self.options.c_retries-1)))
+                            continue
+                        raise
             except KeyboardInterrupt:
                 raise
-        
+            except Exception as err:
+                print("Cannot download file")
+                print(traceback.format_exc())
+            finally:
+                self.post_index += 1
         os.chdir(previousDir)
     
-    def getFile(self, post, retry = False):
+    def getFile(self, post, force_download = False):
         """Gets the file from the post"""
         
         #Parse the API XML 
         urlNodes = post.getElementsByTagName('file_url') #Get the url to download the file from
         urlNode = urlNodes.item(0) 
         url = urlNode.firstChild.nodeValue
-        print("url: " + str(url))
         
+        name = self.poolName
         md5 = post.getElementsByTagName('md5').item(0).firstChild.nodeValue
         rating = post.getElementsByTagName('rating').item(0).firstChild.nodeValue
         id = post.getElementsByTagName('id').item(0).firstChild.nodeValue
@@ -226,61 +233,49 @@ class Downloader (object):
         else:
             rating = 'explicit'
         
-        name = self.temp.substitute(pos = self.pos, id = id, md5 = md5, 
+        name = self.temp.substitute(pos = self.post_index, id = id, md5 = md5, 
                                     tags = tags, rating = rating,  
-                                    w = width, h = height)
+                                    w = width, h = height, name = name)
         
         extension = os.path.splitext(url)[1]
         fullName = name + extension
         
         if file_size > 1024:
             file_size = file_size/1024
-            file_size = '%dKB' %file_size
+            file_size = '%d KB' %file_size
         
         else:
             file_size = '%d B' %file_size
             
         print("Downloading " + url + ' (' + file_size +')... \n', end ='')
                  
-        if retry == False:
+        if not force_download:
             if os.path.exists(fullName):
-                print ('File already exists.')
-                self.pos += 1
-                return 
+                msg = "file already exists"
+                if self.options.md5 and not self.checkMD5(fullName, md5):
+                    msg += ", but md5 hashes do not match.  Re-downloading."
+                    print(msg)
+                else:
+                    msg += ".  Skipping"
+                    print (msg)
+                    return 
         
         print("Saving to " + os.getcwd() + "\\" + fullName)
         
-        outFile = open(fullName, 'wb')        
+        outFile = open(fullName, 'wb')
         
         try:
             file = urllib2.urlopen(url)
-            dlFinished = False
             data = file.read()
             outFile.write(data)
-            dlFinished = True
-                
-        except KeyboardInterrupt:
-            #If download was aborted delete the incomplete file
-            if not dlFinished:
-                outFile.close()
-                os.remove(fullName)
-                self.downloaded -=1
-            raise
+        finally:
+            outFile.close()
             
-        outFile.close()
-        self.downloaded += 1
-        
         #If checking is enabled in the settings get the file MD5 sum and compare it with the API's
-        if self.options.md5:
-            realMD5 = md5
-            self.md5OK = self.checkMD5(fullName, realMD5)
-            if not self.md5OK:
-                outFile.close()
-                os.remove(fullName)
-                self.downloaded -= 1
-                self.pos -= 1
+        if self.options.md5 and not self.checkMD5(fullName, md5):
+            raise Exception("md5 hashes do not match")
         
-        self.pos += 1
+        self.downloaded += 1
         print('Finished.')
     
     def checkMD5(self, filename, realMD5):
@@ -288,25 +283,19 @@ class Downloader (object):
         
         #Open the file for reading
         f = open(filename, 'rb')
-        fileMD5 = md5(f.read())
-                
-        if not fileMD5.hexdigest() == realMD5:
+        hashlib_fileMD5 = hashlib.md5(f.read())
+        fileMD5 = hashlib_fileMD5.hexdigest().decode('utf-8')
+        
+        if fileMD5 != realMD5:
+            print("md5 hashes do not match.  Download failed or file is corrupt.")
+            print(str(fileMD5) + ", " + str(realMD5))
             return False
         
         return True
     
     
-    def getWindowsFriendlyFilename(self, filename):
-        print("old filename: ", filename)
-        new_filename = filename
-        new_filename = new_filename.replace('\\', "")
-        new_filename = new_filename.replace('/', "")
-        new_filename = new_filename.replace(':', "")
-        new_filename = new_filename.replace('*', "")
-        new_filename = new_filename.replace('?', "")
-        new_filename = new_filename.replace('"', "")
-        new_filename = new_filename.replace('<', "")
-        new_filename = new_filename.replace('>', "")
-        new_filename = new_filename.replace('|', "")
-        print("new filename: ", new_filename)
-        return new_filename
+    def get_valid_filename(self, s):
+        result = str(s).strip().replace(' ', '_')
+        result = re.sub(r'(?u)[^-\w.]', '', result)
+        result = result.decode('utf-8')
+        return result
